@@ -24,9 +24,7 @@ env/
 data/*.db
 
 # Logs
-logs/
-!logs
-*.log
+logs/*.log
 
 # OS
 .DS_Store
