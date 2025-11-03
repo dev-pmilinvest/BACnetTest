@@ -1,0 +1,23 @@
+# BACnet Protocol
+BAC0==23.7.3
+
+# HTTP Requests
+requests==2.31.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Logging
+colorlog==6.8.2
+
+# Database
+# Note: sqlite3 is built into Python
+
+# Development Tools
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.12.1
+flake8==7.0.0
+
+# Monitoring (optional)
+psutil==5.9.6
