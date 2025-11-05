@@ -152,6 +152,7 @@ Copy `.env.example` to `.env` and fill in your values:
     # todo set TARGET_DEVICE_IP to <your IPv4>
     TARGET_DEVICE_IP=192.168.1.200
     ```
+   run `hostname -I` to get your Raspberry Pi IPv4
 ### 3.4. Running the Service
 
 You can refer to [2. Running the Service](#2-running-the-service), it's the same setup
