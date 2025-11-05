@@ -79,7 +79,7 @@ python -m src.bacnet_simulator
 2. Configure correct BACnet IPs in `.env`
 3. Run: `python -m src.sensor_reader`
 
-### 2.4. Check the results at [hiecoconso-nicolas.pmil.dev/bacnet-test](https://hiecoconso-nicolas.pmil.dev/bacnet-test)
+### 2.4. Check the results at [hiecoconso-nicolas.pmil.dev/test](https://hiecoconso-nicolas.pmil.dev/test)
 
 ## 3. Raspberry Installation
 
