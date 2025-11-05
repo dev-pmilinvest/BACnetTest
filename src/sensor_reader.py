@@ -1,274 +1,341 @@
-#!/usr/bin/env python3
 """
-Raspberry Pi BACnet Reader Service
-Reads sensor values, stores locally, and posts to Laravel API
+Main Sensor Reader Service
+Reads BACnet sensors and manages data flow to API
+Compatible with BAC0 2025.9.15 and Python 3.13
 """
 
-import BAC0
-import json
-import sqlite3
-import requests
+import asyncio
 import time
-import logging
+import signal
+import sys
 from datetime import datetime
-from pathlib import Path
+from typing import List, Dict, Optional
 
-# Configuration
-CONFIG = {
-    'api_url': 'http://hiecoconso.test/api/sensor-data',
-    'api_token': '1|uOf2HYlFTFcJJ2HJkhMaHoif8jlTzl37ilGId2WIbd6b5821',
-    # 'bacnet_ip': '192.168.1.200/24',  # Pi's IP address
-    'bacnet_ip': '127.0.0.1/24',
-    'target_device_ip': '192.168.1.100',  # BACnet device IP
-    'target_device_id': 100,
-    'read_interval': 30,  # seconds between readings
-    'post_interval': 300,  # seconds between API posts (5 min)
-    'db_path': 'data/sensor_data.db'
-}
+try:
+    import BAC0
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/reader.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+    BAC0_AVAILABLE = True
+except ImportError:
+    BAC0_AVAILABLE = False
+    print("Warning: BAC0 not installed. Run: pip install BAC0")
+
+from src.config import Config
+from src.logger import setup_logger
+from src.database import Database
+from src.api_client import APIClient
+
+logger = setup_logger(__name__)
 
 
 class SensorReader:
+    """Main service for reading sensors and managing data"""
+
     def __init__(self):
         self.bacnet = None
-        self.db_conn = None
-        self.init_database()
+        self.device = None
+        self.database = Database()
+        self.api_client = APIClient()
+        self.running = False
+        self.last_post_time = 0
 
-    def init_database(self):
-        """Initialize SQLite database for local storage"""
-        Path(CONFIG['db_path']).parent.mkdir(parents=True, exist_ok=True)
-        self.db_conn = sqlite3.connect(CONFIG['db_path'])
-        cursor = self.db_conn.cursor()
+        # Register signal handlers for graceful shutdown
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
 
-        cursor.execute('''
-                       CREATE TABLE IF NOT EXISTS sensor_readings
-                       (
-                           id
-                           INTEGER
-                           PRIMARY
-                           KEY
-                           AUTOINCREMENT,
-                           timestamp
-                           TEXT
-                           NOT
-                           NULL,
-                           sensor_name
-                           TEXT
-                           NOT
-                           NULL,
-                           value
-                           REAL
-                           NOT
-                           NULL,
-                           unit
-                           TEXT,
-                           posted
-                           INTEGER
-                           DEFAULT
-                           0
-                       )
-                       ''')
-        self.db_conn.commit()
-        logger.info("Database initialized")
+    def signal_handler(self, signum, frame):
+        """Handle shutdown signals"""
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        self.running = False
 
-    def connect_bacnet(self):
-        """Connect to BACnet network"""
-        try:
-            self.bacnet = BAC0.lite(ip=CONFIG['bacnet_ip'])
-            logger.info(f"Connected to BACnet network: {CONFIG['bacnet_ip']}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect to BACnet: {e}")
+    async def connect_bacnet(self) -> bool:
+        """
+        Connect to BACnet network
+
+        Returns:
+            True if successful
+        """
+        if not BAC0_AVAILABLE:
+            logger.error("BAC0 library not available")
             return False
 
-    def read_sensors(self):
-        """Read sensor values from BACnet device"""
+        try:
+            logger.info(f"Connecting to BACnet network: {Config.BACNET_IP}:{Config.BACNET_PORT}")
+
+            # BAC0 2025.x - use start() without await
+            self.bacnet = BAC0.start(ip=Config.BACNET_IP, port=Config.BACNET_PORT)
+
+            logger.info("✓ Connected to BACnet network")
+
+            # Wait for network to stabilize
+            await asyncio.sleep(2)
+
+            # Try to connect to the target device
+            target_address = f"{Config.TARGET_DEVICE_IP}:{Config.BACNET_TARGET_PORT}"
+            logger.info(f"Connecting to device at {target_address} (ID: {Config.TARGET_DEVICE_ID})...")
+
+            try:
+                # BAC0.device() must be awaited
+                self.device = await BAC0.device(
+                    target_address,
+                    Config.TARGET_DEVICE_ID,
+                    self.bacnet
+                )
+
+                logger.info(f"✓ Connected to device: {self.device.properties.name}")
+                logger.info(f"Available points on device:")
+                for point in self.device.points:
+                    logger.info(f"  - {point.properties.name} ({point.properties.type})")
+
+                return True
+
+            except Exception as e:
+                logger.warning(f"Could not create device object: {e}")
+                logger.info("Will attempt direct reads instead")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to BACnet: {e}", exc_info=True)
+            return False
+
+    async def read_sensors(self) -> List[Dict]:
+        """
+        Read all configured sensors
+
+        Returns:
+            List of sensor readings
+        """
         readings = []
         timestamp = datetime.now().isoformat()
+        sensors = Config.get_sensor_config()
 
-        try:
-            # Discover device
-            device_address = f"{CONFIG['target_device_ip']}:{CONFIG['target_device_id']}"
+        if not self.bacnet:
+            logger.warning("BACnet not connected, skipping read")
+            return readings
 
-            # Define sensors to read (adjust based on your actual BACnet points)
-            sensors = [
-                {'name': 'pool_temperature', 'object': 'analogInput:1'},
-                {'name': 'pool_ph', 'object': 'analogInput:2'},
-                {'name': 'chlorine_level', 'object': 'analogInput:3'},
-                {'name': 'water_pressure', 'object': 'analogInput:4'},
-                {'name': 'flow_rate', 'object': 'analogInput:5'},
-            ]
+        for sensor in sensors:
+            try:
+                # Try reading via device object first (if available)
+                if self.device:
+                    try:
+                        point = self.device[sensor['name']]
+                        value = await point.value
 
-            for sensor in sensors:
-                try:
-                    # Read present value from BACnet object
-                    value = self.bacnet.read(
-                        f"{device_address} {sensor['object']} presentValue"
-                    )
+                        if value is not None:
+                            readings.append({
+                                'timestamp': timestamp,
+                                'sensor_name': sensor['name'],
+                                'value': float(value),
+                                'unit': sensor['unit']
+                            })
+                            logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']}")
+                        continue
+                    except Exception as e:
+                        logger.debug(f"Device read failed for {sensor['name']}, trying direct read: {e}")
 
+                # Fallback to direct read
+                target_address = f"{Config.TARGET_DEVICE_IP}:{Config.BACNET_TARGET_PORT}"
+                obj_type, obj_instance = sensor['object'].split(':')
+                bacnet_point = f"{target_address} {obj_type} {obj_instance} presentValue"
+
+                # Use synchronous read (BAC0 handles async internally)
+                value = self.bacnet.read(bacnet_point)
+
+                if value is not None:
                     readings.append({
                         'timestamp': timestamp,
                         'sensor_name': sensor['name'],
                         'value': float(value),
-                        'unit': self.get_sensor_unit(sensor['name'])
+                        'unit': sensor['unit']
                     })
-                    logger.debug(f"Read {sensor['name']}: {value}")
+                    logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']}")
+                else:
+                    logger.warning(f"✗ {sensor['name']}: No response")
 
-                except Exception as e:
-                    logger.error(f"Error reading {sensor['name']}: {e}")
+            except Exception as e:
+                logger.error(f"✗ Failed to read {sensor['name']}: {e}")
 
-            return readings
+        if readings:
+            logger.info(f"Read {len(readings)}/{len(sensors)} sensor values")
+        else:
+            logger.warning("No sensors responded")
 
-        except Exception as e:
-            logger.error(f"Error in read_sensors: {e}")
-            return []
+        return readings
 
-    def get_sensor_unit(self, sensor_name):
-        """Return unit for sensor (customize based on your sensors)"""
-        units = {
-            'pool_temperature': '°C',
-            'pool_ph': 'pH',
-            'chlorine_level': 'ppm',
-            'water_pressure': 'bar',
-            'flow_rate': 'm³/h'
-        }
-        return units.get(sensor_name, '')
+    def simulate_readings(self) -> List[Dict]:
+        """
+        Simulate sensor readings for testing without BACnet
 
-    def store_readings(self, readings):
-        """Store readings in local database"""
-        cursor = self.db_conn.cursor()
+        Returns:
+            List of simulated readings
+        """
+        import random
 
-        for reading in readings:
-            cursor.execute('''
-                           INSERT INTO sensor_readings (timestamp, sensor_name, value, unit)
-                           VALUES (?, ?, ?, ?)
-                           ''', (
-                               reading['timestamp'],
-                               reading['sensor_name'],
-                               reading['value'],
-                               reading['unit']
-                           ))
+        readings = []
+        timestamp = datetime.now().isoformat()
 
-        self.db_conn.commit()
-        logger.info(f"Stored {len(readings)} readings locally")
-
-    def post_to_api(self):
-        """Post unposted readings to Laravel API"""
-        cursor = self.db_conn.cursor()
-
-        # Get unposted readings
-        cursor.execute('''
-                       SELECT id, timestamp, sensor_name, value, unit
-                       FROM sensor_readings
-                       WHERE posted = 0
-                       ORDER BY timestamp
-                       ''')
-
-        rows = cursor.fetchall()
-        if not rows:
-            logger.info("No new readings to post")
-            return
-
-        # Format data for API
-        readings = [{
-            'timestamp': row[1],
-            'sensor_name': row[2],
-            'value': row[3],
-            'unit': row[4]
-        } for row in rows]
-
-        payload = {
-            'device_id': 'raspberry-pi-001',  # Unique Pi identifier
-            'readings': readings
+        simulated_data = {
+            'Temperature': (20.0, 30.0, 'degreesCelsius'),
+            'Humidity': (40.0, 60.0, 'percent'),
+            'Pressure': (100.0, 102.0, 'kilopascals'),
         }
 
-        try:
-            # Post to Laravel API
-            headers = {
-                'Authorization': f"Bearer {CONFIG['api_token']}",
-                'Content-Type': 'application/json'
-            }
+        for sensor_name, (min_val, max_val, unit) in simulated_data.items():
+            value = random.uniform(min_val, max_val)
+            readings.append({
+                'timestamp': timestamp,
+                'sensor_name': sensor_name,
+                'value': round(value, 2),
+                'unit': unit
+            })
 
-            response = requests.post(
-                CONFIG['api_url'],
-                json=payload,
-                headers=headers,
-                timeout=30
-            )
+        logger.debug(f"Generated {len(readings)} simulated readings")
+        return readings
 
-            if response.status_code == 200:
-                # Mark readings as posted
-                reading_ids = [row[0] for row in rows]
-                placeholders = ','.join('?' * len(reading_ids))
-                cursor.execute(
-                    f'UPDATE sensor_readings SET posted = 1 WHERE id IN ({placeholders})',
-                    reading_ids
-                )
-                self.db_conn.commit()
+    async def process_readings(self):
+        """Read sensors and store locally"""
+        if Config.SIMULATE_MODE or not self.bacnet:
+            readings = self.simulate_readings()
+        else:
+            readings = await self.read_sensors()
 
-                logger.info(f"Successfully posted {len(readings)} readings to API")
+        if readings:
+            self.database.store_readings(readings)
 
-                # Clean up old posted data (keep last 7 days)
-                cursor.execute('''
-                               DELETE
-                               FROM sensor_readings
-                               WHERE posted = 1
-                                 AND timestamp
-                                   < datetime('now'
-                                   , '-7 days')
-                               ''')
-                self.db_conn.commit()
+    def sync_with_api(self):
+        """Post unposted readings to API"""
+        unposted = self.database.get_unposted_readings()
 
-            else:
-                logger.error(f"API returned status {response.status_code}: {response.text}")
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to post to API: {e}")
-
-    def run(self):
-        """Main service loop"""
-        if not self.connect_bacnet():
-            logger.error("Cannot start: BACnet connection failed")
+        if not unposted:
+            logger.debug("No readings to sync")
             return
 
-        logger.info("Reader service started")
-        last_post_time = 0
+        # Prepare readings for API (remove IDs)
+        readings_for_api = [{
+            'timestamp': r['timestamp'],
+            'sensor_name': r['sensor_name'],
+            'value': r['value'],
+            'unit': r['unit']
+        } for r in unposted]
+
+        # Post to API
+        if self.api_client.post_sensor_data(readings_for_api):
+            # Mark as posted
+            reading_ids = [r['id'] for r in unposted]
+            self.database.mark_as_posted(reading_ids)
+
+            # Cleanup old data
+            self.database.cleanup_old_data(days=7)
+        else:
+            logger.warning("Failed to post to API, will retry later")
+
+    async def run_async(self):
+        """Async main service loop"""
+        logger.info("=" * 60)
+        logger.info("Heitz - Sensor Reader Service")
+        logger.info("=" * 60)
+        logger.info(f"Device ID: {Config.DEVICE_ID}")
+        logger.info(f"API URL: {Config.API_URL}")
+        logger.info(f"Read Interval: {Config.READ_INTERVAL}s")
+        logger.info(f"Post Interval: {Config.POST_INTERVAL}s")
+        logger.info(f"Simulate Mode: {Config.SIMULATE_MODE}")
+        logger.info(f"Python Version: {sys.version}")
+        if BAC0_AVAILABLE:
+            version = getattr(BAC0, "__version__", "unknown")
+            logger.info(f"BAC0 Version: {version}")
+        logger.info("=" * 60)
+
+        # Validate configuration
+        try:
+            Config.validate()
+        except ValueError as e:
+            logger.error(f"Configuration error: {e}")
+            return
+
+        # Check API connectivity
+        if not self.api_client.health_check():
+            logger.warning("⚠ Cannot reach API server, will continue and retry later")
+        else:
+            logger.info("✓ API server is reachable")
+
+        # Connect to BACnet if not in simulate mode
+        if not Config.SIMULATE_MODE:
+            if not await self.connect_bacnet():
+                logger.error("Cannot start: BACnet connection failed")
+                logger.info("Hint: Set SIMULATE_MODE=True in .env to test without BACnet")
+                return
+        else:
+            logger.info("Running in SIMULATION mode (no real BACnet connection)")
+
+        # Main loop
+        self.running = True
+        logger.info("✓ Service started successfully")
+        logger.info("")
 
         try:
-            while True:
+            while self.running:
+                cycle_start = time.time()
+
                 # Read sensors
-                readings = self.read_sensors()
+                await self.process_readings()
 
-                if readings:
-                    self.store_readings(readings)
+                # Sync with API if interval elapsed
+                if time.time() - self.last_post_time >= Config.POST_INTERVAL:
+                    self.sync_with_api()
+                    self.last_post_time = time.time()
 
-                # Post to API at configured interval
-                if time.time() - last_post_time >= CONFIG['post_interval']:
-                    self.post_to_api()
-                    last_post_time = time.time()
+                    # Show stats
+                    stats = self.database.get_stats()
+                    logger.info(f"📊 Stats: {stats['total_readings']} total, "
+                                f"{stats['unposted_readings']} pending")
 
-                # Wait before next reading
-                time.sleep(CONFIG['read_interval'])
+                # Wait for next cycle
+                elapsed = time.time() - cycle_start
+                sleep_time = max(0, Config.READ_INTERVAL - elapsed)
+
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
 
         except KeyboardInterrupt:
             logger.info("Service stopped by user")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
         finally:
-            if self.bacnet:
-                self.bacnet.disconnect()
-            if self.db_conn:
-                self.db_conn.close()
+            await self.shutdown()
+
+    async def shutdown(self):
+        """Clean shutdown"""
+        logger.info("\n" + "=" * 60)
+        logger.info("Shutting down...")
+
+        # Try to post any remaining data
+        try:
+            self.sync_with_api()
+        except:
+            pass
+
+        # Close connections
+        if self.bacnet:
+            try:
+                await self.bacnet._disconnect()
+                logger.info("✓ BACnet disconnected")
+            except:
+                pass
+
+        self.database.close()
+        self.api_client.close()
+        logger.info("✓ Shutdown complete")
+        logger.info("=" * 60)
+
+    def run(self):
+        """Entry point - runs async event loop"""
+        asyncio.run(self.run_async())
+
+
+def main():
+    """Entry point"""
+    reader = SensorReader()
+    reader.run()
 
 
 if __name__ == "__main__":
-    reader = SensorReader()
-    reader.run()
+    main()

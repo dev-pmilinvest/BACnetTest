@@ -1,5 +1,5 @@
-# BACnet Protocol
-BAC0==23.7.3
+# BACnet Protocol (compatible with Python 3.13)
+BAC0==2025.9.15
 
 # HTTP Requests
 requests==2.31.0

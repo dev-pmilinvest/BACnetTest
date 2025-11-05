@@ -4,12 +4,22 @@ Loads settings from .env file
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Get the project root directory (parent of src/)
+if __name__ == '__main__':
+    PROJECT_ROOT = Path(__file__).parent.parent
+else:
+    # When imported, find project root
+    PROJECT_ROOT = Path(__file__).parent.parent
 
+# Change to project root to ensure relative paths work
+os.chdir(PROJECT_ROOT)
+
+# Load environment variables from project root
+load_dotenv(PROJECT_ROOT / '.env')
 
 class Config:
     """Application configuration"""
@@ -23,11 +33,14 @@ class Config:
     DEVICE_ID = os.getenv('DEVICE_ID', 'raspberry-pi-001')
     DEVICE_NAME = os.getenv('DEVICE_NAME', 'AquaticCenter-Pi-001')
 
-    # BACnet Configuration
-    BACNET_IP = os.getenv('BACNET_IP', '192.168.1.200/24')
-    BACNET_PORT = int(os.getenv('BACNET_PORT', '47808'))
-    TARGET_DEVICE_IP = os.getenv('TARGET_DEVICE_IP', '192.168.1.100')
+    # BACnet Configuration - Reader
+    BACNET_IP = os.getenv('BACNET_IP', '192.168.1.116/24')
+    BACNET_PORT = int(os.getenv('BACNET_PORT', '47809'))  # Different port to avoid conflict
+
+    # BACnet Configuration - Target Device (Simulator)
+    TARGET_DEVICE_IP = os.getenv('TARGET_DEVICE_IP', '192.168.1.116')
     TARGET_DEVICE_ID = int(os.getenv('TARGET_DEVICE_ID', '100'))
+    BACNET_TARGET_PORT = int(os.getenv('BACNET_TARGET_PORT', '47808'))  # Simulator's port
 
     # Timing
     READ_INTERVAL = int(os.getenv('READ_INTERVAL', '30'))
@@ -62,36 +75,33 @@ class Config:
 
     @classmethod
     def get_sensor_config(cls):
-        """Define sensor configuration"""
+        """
+        Define sensor configuration
+        Maps to the objects created in the BACnet simulator
+        """
         return [
             {
-                'name': 'pool_temperature',
-                'object': 'analogInput:1',
-                'unit': '°C',
-                'description': 'Pool Water Temperature'
+                'name': 'Temperature',
+                'object': 'analogValue:1',
+                'unit': 'degreesCelsius',
+                'description': 'Room Temperature'
             },
             {
-                'name': 'pool_ph',
-                'object': 'analogInput:2',
-                'unit': 'pH',
-                'description': 'Pool pH Level'
+                'name': 'Humidity',
+                'object': 'analogValue:2',
+                'unit': 'percent',
+                'description': 'Room Humidity'
             },
             {
-                'name': 'chlorine_level',
+                'name': 'Pressure',
                 'object': 'analogInput:3',
-                'unit': 'ppm',
-                'description': 'Chlorine Concentration'
+                'unit': 'kilopascals',
+                'description': 'Air Pressure'
             },
             {
-                'name': 'water_pressure',
-                'object': 'analogInput:4',
-                'unit': 'bar',
-                'description': 'Water Pressure'
-            },
-            {
-                'name': 'flow_rate',
-                'object': 'analogInput:5',
-                'unit': 'm³/h',
-                'description': 'Water Flow Rate'
+                'name': 'SystemStatus',
+                'object': 'binaryValue:1',
+                'unit': 'status',
+                'description': 'System On/Off Status'
             },
         ]
