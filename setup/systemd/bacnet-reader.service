@@ -1,0 +1,19 @@
+[Unit]
+Description=BACnet Sensor Reader Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/projects/BACnetTest
+Environment="PATH=/home/pi/projects/BACnetTest/venv/bin"
+ExecStart=/home/pi/projects/BACnetTest/venv/bin/python -m src.sensor_reader
+Restart=always
+RestartSec=10
+
+StandardOutput=append:/home/pi/projects/BACnetTest/logs/service.log
+StandardError=append:/home/pi/projects/BACnetTest/logs/service_error.log
+
+[Install]
+WantedBy=multi-user.target

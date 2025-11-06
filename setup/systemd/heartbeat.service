@@ -1,0 +1,17 @@
+[Unit]
+Description=Heartbeat Service
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/projects/BACnetTest
+ExecStart=/home/pi/projects/BACnetTest/venv/bin/python -m src.heartbeat
+Restart=always
+RestartSec=30
+
+StandardOutput=append:/home/pi/projects/BACnetTest/logs/heartbeat.log
+StandardError=append:/home/pi/projects/BACnetTest/logs/heartbeat_error.log
+
+[Install]
+WantedBy=multi-user.target

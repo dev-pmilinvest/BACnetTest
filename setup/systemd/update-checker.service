@@ -1,0 +1,32 @@
+[Unit]
+Description=Update Checker Service
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/projects/BACnetTest
+ExecStart=/home/pi/projects/BACnetTest/venv/bin/python -m src.update_checker
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## **API Endpoints You'll Need:**
+
+**1. Check for updates:**
+```
+POST /api/device/check-update
+Body: {device_id, current_version}
+Response: {update_available: bool, target_version: string}
+```
+
+**2. Report update status:**
+```
+POST /api/device/update-status
+Body: {device_id, success: bool, version, error}
+```
