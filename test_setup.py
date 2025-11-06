@@ -99,7 +99,7 @@ try:
     from src.config import Config
     Config.validate()
     print(f"✓ Configuration loaded successfully")
-    print(f"  - Device ID: {Config.DEVICE_ID}")
+    print(f"  - Device Name: {Config.DEVICE_NAME}")
     print(f"  - API URL: {Config.API_URL}")
     print(f"  - Simulate Mode: {Config.SIMULATE_MODE}")
     tests.append(True)

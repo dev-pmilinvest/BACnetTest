@@ -17,7 +17,7 @@ class APIClient:
     def __init__(self):
         self.api_url = Config.API_URL
         self.config_url = Config.API_CONFIG_URL
-        self.device_id = Config.DEVICE_ID
+        self.device_id = Config.DEVICE_NAME
         self.session = requests.Session()
         self.session.headers.update({
             'Authorization': f'Bearer {Config.API_TOKEN}',

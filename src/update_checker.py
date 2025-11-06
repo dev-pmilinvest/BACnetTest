@@ -40,7 +40,7 @@ class UpdateChecker:
             response = requests.post(
                 self.api_url,
                 json={
-                    'device_id': Config.DEVICE_ID,
+                    'device_id': Config.DEVICE_NAME,
                     'current_version': self.current_version
                 },
                 timeout=10
@@ -122,7 +122,7 @@ class UpdateChecker:
             requests.post(
                 Config.API_URL.replace('/sensor-data', '/update-status'),
                 json={
-                    'device_id': Config.DEVICE_ID,
+                    'device_id': Config.DEVICE_NAME,
                     'success': success,
                     'version': version_or_error if success else None,
                     'error': None if success else version_or_error

@@ -28,7 +28,6 @@ Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
 # todo change 'whatever-you-want' to an identifier unique to you (e.g.: dev4)
-DEVICE_ID=raspberry-pi-test-whatever-you-want
 DEVICE_NAME=Raspberry-Pi-Test-whatever-you-want
 
 # todo set BACNET_IP to <your IPv4>/24
@@ -143,7 +142,6 @@ From your MobaXterm session terminal :
 Copy `.env.example` to `.env` and fill in your values:
     ```bash
     # todo change 'whatever-you-want' to an identifier unique to you (e.g.: dev4)
-    DEVICE_ID=raspberry-pi-test-whatever-you-want
     DEVICE_NAME=Raspberry-Pi-Test-whatever-you-want
     
     # todo set BACNET_IP to <your IPv4>/24

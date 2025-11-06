@@ -7,7 +7,7 @@ while True:
         heartbeat_url = Config.API_URL.replace('/sensor-data', '/heartbeat')
         requests.post(
             heartbeat_url,
-            json={'device_id': Config.DEVICE_ID, 'status': 'alive'},
+            json={'device_id': Config.DEVICE_NAME, 'status': 'alive'},
             timeout=10
         )
     except:

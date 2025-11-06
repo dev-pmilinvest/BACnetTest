@@ -233,7 +233,7 @@ class SensorReader:
         logger.info("=" * 60)
         logger.info("Heitz - Sensor Reader Service")
         logger.info("=" * 60)
-        logger.info(f"Device ID: {Config.DEVICE_ID}")
+        logger.info(f"Device ID: {Config.DEVICE_NAME}")
         logger.info(f"API URL: {Config.API_URL}")
         logger.info(f"Read Interval: {Config.READ_INTERVAL}s")
         logger.info(f"Post Interval: {Config.POST_INTERVAL}s")

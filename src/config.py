@@ -30,7 +30,6 @@ class Config:
     API_CONFIG_URL = os.getenv('API_CONFIG_URL', 'http://localhost:8000/api/device/config')
 
     # Device Configuration
-    DEVICE_ID = os.getenv('DEVICE_ID', 'raspberry-pi-001')
     DEVICE_NAME = os.getenv('DEVICE_NAME', 'AquaticCenter-Pi-001')
 
     # BACnet Configuration - Reader
@@ -65,9 +64,6 @@ class Config:
         """Validate critical configuration"""
         if not cls.API_TOKEN and not cls.DEBUG:
             raise ValueError("API_TOKEN is required")
-
-        if not cls.DEVICE_ID:
-            raise ValueError("DEVICE_ID is required")
 
         # Ensure directories exist
         Path(cls.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
