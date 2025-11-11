@@ -1,15 +1,47 @@
-# Heitz - Raspberry Pi BACnet Test
 
-BACnet sensor data collection service
+# Heitz - Raspberry Pi BACnet Test
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/dev-pmilinvest/BACnetTest/blob/master/README.md)
+[![fr](https://img.shields.io/badge/lang-fr-green.svg)](https://github.com/dev-pmilinvest/BACnetTest/blob/master/README.fr.md)
+
+Simple BACnet point reader
+
+## Features
+
+- **Sensor reading** `sensor_reader.py` <br>
+   Simulates/reads a BACnet point
+   - Simulate mode — periodically simulates a BACnet point readings
+   - Read mode — periodically reads a BACnet point
+- **BACnet simulator** `bacnet_simulator.py` <br>
+   Setups a simulated BACnet point & periodically updates values
+   > **_NOTE:_** This is NOT realistic. <br>
+   > This will simulate a BACnet device on the same IP as the sensor reader. In a realistic scenario, they should be on the same subnet but on different IPs. <br>
+   > This will be addressed in an upcoming version.
+- **Database storage** (integrated in sensor reading) <br>
+   Stores all readings in database
+- **API post readings** (integrated in sensor reading) <br>
+   Periodically posts readings to [Hiecoconso](https://hiecoconso-nicolas.pmil.dev/test)
+- **Heartbeat routine** `heartbeat.py` <br>
+   Periodically sends life signals to Hiecoconso
+- **Update Checker** `update_checker.py` <br>
+   Periodically checks for updates and performs them if required
+   > **_Todo:_** heartbeat & update checker docs
 
 ## Requirements
 
 - Python 3.13+ (tested with 3.13.5, **won't work with Python 3.12-**)
 - Raspberry Pi 5 (or any system for development)
 - Laravel API backend (already setup)
-- Network access to BACnet devices (optional *— not tested*)
+- Network access to real BACnet devices (optional *— not tested*)
 
-## 1.Install Locally
+## Table of Contents
+1. [Install Locally](#1-install-locally)
+2. [Running the Services](#2-running-the-services)
+3. [Raspberry Installation](#3-raspberry-installation)
+4. [Upcoming](#4-upcoming)
+
+## 1. Install Locally
+
+This test project is intended to run on a Raspberry Pi 5. However, I recommend installing and testing it locally first as the setup is much simpler (you will need it if you intend to work on it anyway)
 
 ### 1.1. Clone repository (public)
 
@@ -45,7 +77,9 @@ python test_setup.py
 
 Should show all ✓ checks passing.
 
-## 2. Running the Service
+## 2. Running the Services
+
+test `sensor_reader.py` alone [(2.1)](#21-development-mode-simulated-data) or with `bacnet_simulator.py` [(2.2)](#22-with-bacnet-simulator)
 
 ### 2.1. Development Mode (Simulated Data)
 
@@ -69,7 +103,7 @@ python -m src.bacnet_simulator
 
 **Terminal 2** (Reader):
 1. Set `SIMULATE_MODE=False` in `.env`
-2. Update `BACNET_IP` to match your network in `.env`
+2. Update `BACNET_IP` to match your network in `.env` (if you didn't already)
 3. Run `python -m src.sensor_reader`
 
 ### 2.3. Production Mode (Real Device — *not tested*)
@@ -151,11 +185,11 @@ Copy `.env.example` to `.env` and fill in your values:
     TARGET_DEVICE_IP=192.168.1.200
     ```
    run `hostname -I` to get your Raspberry Pi IPv4
-### 3.4. Running the Service
+### 3.4. Running the Services
 
-You can refer to [2. Running the Service](#2-running-the-service), it's the same setup
+You can refer to [2. Running the Services](#2-running-the-services), it's the same setup
 
 ## 4. Upcoming
 
-Connect to a remote BACnet simulator
+Connect to a remote BACnet simulator (same subnet but different IP)
 
