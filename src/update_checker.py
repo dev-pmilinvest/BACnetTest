@@ -136,10 +136,7 @@ class UpdateChecker:
                 update_available, target_version = self.check_for_update()
 
                 if update_available:
-                    logger.info(f"Update available: {target_version}")
-                    # self.perform_update(target_version)
-                else:
-                    logger.debug("No updates available")
+                    self.perform_update(target_version)
 
             except Exception as e:
                 logger.error(f"Update check error: {e}")
