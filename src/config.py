@@ -25,9 +25,8 @@ class Config:
     """Application configuration"""
 
     # API Configuration
-    API_URL = os.getenv('API_URL', 'http://localhost:8000/api/sensor-data')
+    API_URL = os.getenv('API_URL', 'http://localhost:8000/api')
     API_TOKEN = os.getenv('API_TOKEN', '')
-    API_CONFIG_URL = os.getenv('API_CONFIG_URL', 'http://localhost:8000/api/device/config')
 
     # Device Configuration
     DEVICE_NAME = os.getenv('DEVICE_NAME', 'AquaticCenter-Pi-001')

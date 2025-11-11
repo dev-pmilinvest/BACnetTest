@@ -15,8 +15,12 @@ class APIClient:
     """Client for communicating with Laravel API"""
 
     def __init__(self):
-        self.api_url = Config.API_URL
-        self.config_url = Config.API_CONFIG_URL
+        self.sensor_url = Config.API_URL + "/sensor-data"
+        self.config_url = Config.API_URL + "/device/config"
+        self.health_url = Config.API_URL + "/health"
+        self.heartbeat_url = Config.API_URL + "/heartbeat"
+        self.check_update_url = Config.API_URL + "/check-update"
+        self.update_status_url = Config.API_URL + "/update-status"
         self.device_id = Config.DEVICE_NAME
         self.session = requests.Session()
         self.session.headers.update({
@@ -48,7 +52,7 @@ class APIClient:
             logger.info(f"Posting {len(readings)} readings to API...")
 
             response = self.session.post(
-                self.api_url,
+                self.sensor_url,
                 json=payload,
                 timeout=30
             )
@@ -110,11 +114,59 @@ class APIClient:
             True if API is healthy, False otherwise
         """
         try:
-            health_url = Config.API_URL.replace('/sensor-data', '/health')
-            response = self.session.get(health_url, timeout=5)
+            response = self.session.get(self.health_url, timeout=5)
             return response.status_code == 200
         except:
             return False
+
+    def check_update(self, version: str) -> tuple[bool, Optional[str]]:
+        """
+        Check if an update is available for the device
+
+        Args:
+            version: Current git commit hash
+
+        Returns:
+            Tuple of (update_available, target_version)
+            Always returns a tuple: (False, None) on failure, (bool, str) on success
+        """
+        if not version:
+            logger.warning("No version given")
+            return False, None
+
+        payload = {
+            'device_id': self.device_id,
+            'current_version': version
+        }
+
+        try:
+            logger.info("Checking for update...")
+
+            response = self.session.post(
+                self.check_update_url,
+                json=payload,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('update_available', False), data.get('target_version')
+            else:
+                logger.error(f"API returned status {response.status_code}: {response.text}")
+                return False, None
+
+        except requests.exceptions.ConnectionError:
+            logger.error("Connection failed: Could not reach API server")
+            return False, None
+        except requests.exceptions.Timeout:
+            logger.error("Request timeout: API server not responding")
+            return False, None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed: {e}")
+            return False, None
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            return False, None
 
     def close(self):
         """Close the session"""

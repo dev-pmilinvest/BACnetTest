@@ -4,9 +4,8 @@ from src.config import Config
 
 while True:
     try:
-        heartbeat_url = Config.API_URL.replace('/sensor-data', '/heartbeat')
         requests.post(
-            heartbeat_url,
+            Config.API_URL + "/heartbeat",
             json={'device_id': Config.DEVICE_NAME, 'status': 'alive'},
             timeout=10
         )

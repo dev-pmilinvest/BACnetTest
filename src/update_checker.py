@@ -11,6 +11,7 @@ import requests
 from pathlib import Path
 from src.config import Config
 from src.logger import setup_logger
+from src.api_client import APIClient
 
 logger = setup_logger(__name__)
 
@@ -19,7 +20,7 @@ class UpdateChecker:
     def __init__(self):
         self.project_root = Path(__file__).parent.parent
         self.current_version = self._get_current_version()
-        self.api_url = Config.API_URL.replace('/sensor-data', '/check-update')
+        self.api_client = APIClient()
 
     def _get_current_version(self):
         """Get current git commit hash"""
@@ -36,24 +37,18 @@ class UpdateChecker:
 
     def check_for_update(self):
         """Check API if update is available"""
-        try:
-            response = requests.post(
-                self.api_url,
-                json={
-                    'device_id': Config.DEVICE_NAME,
-                    'current_version': self.current_version
-                },
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('update_available', False), data.get('target_version')
-
-        except Exception as e:
-            logger.error(f"Failed to check for updates: {e}")
-
-        return False, None
+        current_version = self.current_version
+        logger.info(f"Current version: {current_version}")
+        
+        # Use APIClient to check for updates
+        update_available, target_version = self.api_client.check_update(current_version)
+        
+        if update_available:
+            logger.info(f"Update available: {target_version}")
+        else:
+            logger.debug("No updates available")
+        
+        return update_available, target_version
 
     def perform_update(self, target_version=None):
         """Perform git pull and restart services"""
@@ -86,7 +81,7 @@ class UpdateChecker:
             # 4. Update dependencies if requirements changed
             logger.info("Updating dependencies...")
             subprocess.run([
-                f'{self.project_root}/venv/bin/pip',
+                sys.executable, '-m', 'pip',
                 'install', '-r', 'requirements.txt'
             ], cwd=self.project_root)
 
@@ -97,7 +92,7 @@ class UpdateChecker:
 
             # 6. Report success
             logger.info("✓ Update completed successfully")
-            self._report_update_status(True, self._get_current_version())
+            # self._report_update_status(True, self._get_current_version())
             return True
 
         except Exception as e:
@@ -120,7 +115,7 @@ class UpdateChecker:
         """Report update result to API"""
         try:
             requests.post(
-                Config.API_URL.replace('/sensor-data', '/update-status'),
+                Config.API_URL + "update-status",
                 json={
                     'device_id': Config.DEVICE_NAME,
                     'success': success,
@@ -142,7 +137,7 @@ class UpdateChecker:
 
                 if update_available:
                     logger.info(f"Update available: {target_version}")
-                    self.perform_update(target_version)
+                    # self.perform_update(target_version)
                 else:
                     logger.debug("No updates available")
 
