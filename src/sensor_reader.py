@@ -47,6 +47,98 @@ class SensorReader:
         logger.info(f"Received signal {signum}, shutting down gracefully...")
         self.running = False
 
+    def _parse_priority_array(self, priority_array) -> tuple:
+        """
+        Parse BACnet priority array object into a list and determine active priority.
+
+        Args:
+            priority_array: BAC0 PriorityArray object
+
+        Returns:
+            Tuple of (priority_array_list, active_priority)
+        """
+        pa_list = []
+        active_priority = None
+
+        try:
+            # Method 1: Try using dict_contents() (BAC0 recommended approach)
+            if hasattr(priority_array, 'dict_contents'):
+                pa_dict = priority_array.dict_contents()
+                for i in range(16):
+                    pv = pa_dict.get(i) or pa_dict.get(str(i))
+                    if pv is None:
+                        pa_list.append(None)
+                    elif isinstance(pv, dict):
+                        # PriorityValue is a dict like {'null': ()} or {'real': 25.0}
+                        keys = list(pv.keys())
+                        if keys and keys[0] == 'null':
+                            pa_list.append(None)
+                        else:
+                            val = list(pv.values())[0] if pv.values() else None
+                            try:
+                                pa_list.append(float(val) if val is not None else None)
+                            except (ValueError, TypeError):
+                                pa_list.append(None)
+                    else:
+                        try:
+                            pa_list.append(float(pv) if str(pv).lower() != 'null' else None)
+                        except (ValueError, TypeError):
+                            pa_list.append(None)
+
+            # Method 2: Try iterating directly
+            elif hasattr(priority_array, '__iter__'):
+                for item in priority_array:
+                    if item is None or str(item).lower() == 'null':
+                        pa_list.append(None)
+                    elif hasattr(item, 'dict_contents'):
+                        item_dict = item.dict_contents()
+                        keys = list(item_dict.keys())
+                        if keys and keys[0] == 'null':
+                            pa_list.append(None)
+                        else:
+                            val = list(item_dict.values())[0] if item_dict.values() else None
+                            try:
+                                pa_list.append(float(val) if val is not None else None)
+                            except (ValueError, TypeError):
+                                pa_list.append(None)
+                    else:
+                        try:
+                            pa_list.append(float(item))
+                        except (ValueError, TypeError):
+                            pa_list.append(None)
+
+            # Method 3: Try accessing by index
+            elif hasattr(priority_array, '__getitem__'):
+                for i in range(16):
+                    try:
+                        item = priority_array[i]
+                        if item is None or str(item).lower() == 'null':
+                            pa_list.append(None)
+                        elif hasattr(item, 'keys'):
+                            keys = list(item.keys())
+                            if keys and keys[0] == 'null':
+                                pa_list.append(None)
+                            else:
+                                val = list(item.values())[0] if item.values() else None
+                                pa_list.append(float(val) if val is not None else None)
+                        else:
+                            pa_list.append(float(item))
+                    except (IndexError, ValueError, TypeError):
+                        pa_list.append(None)
+
+        except Exception as e:
+            logger.debug(f"Error parsing priority array: {e}")
+            return None, None
+
+        # Find active priority (first non-null entry, 1-indexed)
+        if pa_list:
+            for idx, prio_value in enumerate(pa_list):
+                if prio_value is not None:
+                    active_priority = idx + 1  # BACnet priorities are 1-indexed
+                    break
+
+        return pa_list if pa_list else None, active_priority
+
     async def connect_bacnet(self) -> bool:
         """
         Connect to BACnet network
@@ -139,32 +231,12 @@ class SensorReader:
                                 try:
                                     target_address = f"{Config.TARGET_DEVICE_IP}:{Config.BACNET_TARGET_PORT}"
 
-                                    # Read priority array (property 87)
-                                    priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
+                                    # Read priority array using numeric property ID 87
+                                    priority_array_point = f"{target_address} {obj_type} {obj_instance} 87"
                                     priority_array = await self.bacnet.read(priority_array_point)
-                                    if priority_array is not None and not isinstance(priority_array, str):
-                                        # Convert to list, handling various return types
-                                        if hasattr(priority_array, '__iter__'):
-                                            pa_list = []
-                                            for v in priority_array:
-                                                try:
-                                                    if v is None or (hasattr(v, 'is_null') and v.is_null) or str(v).lower() == 'null':
-                                                        pa_list.append(None)
-                                                    else:
-                                                        pa_list.append(float(v))
-                                                except (ValueError, TypeError):
-                                                    pa_list.append(None)
-                                            reading['priority_array'] = pa_list
-                                        else:
-                                            reading['priority_array'] = priority_array
 
-                                    # Determine active priority from priority array
-                                    if reading['priority_array'] and isinstance(reading['priority_array'], list):
-                                        # Find the highest priority (lowest index) with a non-null value
-                                        for idx, prio_value in enumerate(reading['priority_array']):
-                                            if prio_value is not None:
-                                                reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
-                                                break
+                                    if priority_array is not None:
+                                        reading['priority_array'], reading['active_priority'] = self._parse_priority_array(priority_array)
 
                                 except Exception as prio_e:
                                     logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
@@ -199,32 +271,12 @@ class SensorReader:
 
                     if obj_type in commandable_types:
                         try:
-                            # Read priority array (property 87)
-                            priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
+                            # Read priority array using numeric property ID 87
+                            priority_array_point = f"{target_address} {obj_type} {obj_instance} 87"
                             priority_array = await self.bacnet.read(priority_array_point)
-                            if priority_array is not None and not isinstance(priority_array, str):
-                                # Convert to list, handling various return types
-                                if hasattr(priority_array, '__iter__'):
-                                    pa_list = []
-                                    for v in priority_array:
-                                        try:
-                                            if v is None or (hasattr(v, 'is_null') and v.is_null) or str(v).lower() == 'null':
-                                                pa_list.append(None)
-                                            else:
-                                                pa_list.append(float(v))
-                                        except (ValueError, TypeError):
-                                            pa_list.append(None)
-                                    reading['priority_array'] = pa_list
-                                else:
-                                    reading['priority_array'] = priority_array
 
-                            # Determine active priority from priority array
-                            if reading['priority_array'] and isinstance(reading['priority_array'], list):
-                                # Find the highest priority (lowest index) with a non-null value
-                                for idx, prio_value in enumerate(reading['priority_array']):
-                                    if prio_value is not None:
-                                        reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
-                                        break
+                            if priority_array is not None:
+                                reading['priority_array'], reading['active_priority'] = self._parse_priority_array(priority_array)
 
                         except Exception as prio_e:
                             logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
