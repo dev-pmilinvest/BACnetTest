@@ -32,12 +32,12 @@ class Config:
     DEVICE_NAME = os.getenv('DEVICE_NAME', 'AquaticCenter-Pi-001')
 
     # BACnet Configuration - Reader
-    BACNET_IP = os.getenv('BACNET_IP', '192.168.1.116/24')
+    BACNET_IP = os.getenv('BACNET_IP', '192.168.1.18/24')
     BACNET_PORT = int(os.getenv('BACNET_PORT', '47809'))  # Different port to avoid conflict
 
     # BACnet Configuration - Target Device (Simulator)
-    TARGET_DEVICE_IP = os.getenv('TARGET_DEVICE_IP', '192.168.1.116')
-    TARGET_DEVICE_ID = int(os.getenv('TARGET_DEVICE_ID', '100'))
+    TARGET_DEVICE_IP = os.getenv('TARGET_DEVICE_IP', '192.168.1.43')
+    TARGET_DEVICE_ID = int(os.getenv('TARGET_DEVICE_ID', '128143'))
     BACNET_TARGET_PORT = int(os.getenv('BACNET_TARGET_PORT', '47808'))  # Simulator's port
 
     # Timing
@@ -76,27 +76,21 @@ class Config:
         """
         return [
             {
-                'name': 'Temperature',
+                'name': 'Consigne Temp Reprise',
                 'object': 'analogValue:1',
                 'unit': 'degreesCelsius',
                 'description': 'Room Temperature'
             },
             {
-                'name': 'Humidity',
+                'name': 'Consigne Poids Eau',
                 'object': 'analogValue:2',
                 'unit': 'percent',
                 'description': 'Room Humidity'
             },
             {
-                'name': 'Pressure',
-                'object': 'analogInput:3',
-                'unit': 'kilopascals',
-                'description': 'Air Pressure'
-            },
-            {
-                'name': 'SystemStatus',
-                'object': 'binaryValue:1',
-                'unit': 'status',
-                'description': 'System On/Off Status'
+                'name': 'Consigne Temp Eau Bassin 2',
+                'object': 'analogValue:2',
+                'unit': 'degreesCelsius',
+                'description': 'test description'
             },
         ]

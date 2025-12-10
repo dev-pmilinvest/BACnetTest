@@ -51,15 +51,18 @@ class APIClient:
         try:
             logger.info(f"Posting {len(readings)} readings to API...")
 
-            response = self.session.post(
+
+            response = requests.post(
                 self.sensor_url,
+                headers=self.session.headers,
                 json=payload,
                 timeout=30
             )
 
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"✓ Successfully posted {data.get('stored_count', len(readings))} readings")
+                logger.info(f"âœ“ Successfully posted {data.get('stored_count', len(readings))} readings")
+                #logger.info(f"âœ“ Successfully posted {data.get('stored_count', len(readings))} readings")
                 return True
             else:
                 logger.error(f"API returned status {response.status_code}: {response.text}")
@@ -88,15 +91,16 @@ class APIClient:
         try:
             logger.debug("Fetching device configuration...")
 
-            response = self.session.post(
+            response = requests.post(
                 self.config_url,
+                headers=self.session.headers,
                 json={'device_id': self.device_id},
                 timeout=10
             )
 
             if response.status_code == 200:
                 data = response.json()
-                logger.info("✓ Configuration fetched successfully")
+                logger.info("âœ“ Configuration fetched successfully")
                 return data.get('config', {})
             else:
                 logger.warning(f"Could not fetch config: {response.status_code}")
@@ -142,8 +146,9 @@ class APIClient:
         try:
             logger.info("Checking for update...")
 
-            response = self.session.post(
+            response = requests.post(
                 self.check_update_url,
+                headers=self.session.headers,
                 json=payload,
                 timeout=30
             )
