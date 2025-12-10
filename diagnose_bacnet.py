@@ -17,62 +17,104 @@ async def diagnose():
     print(f"{'='*60}\n")
 
     # Try to connect to device
+    device = None
     try:
         device = await BAC0.device(target, device_id, bacnet)
         print(f"Connected to device: {device.properties.name}")
-        print(f"\nAvailable points:")
+        print(f"\nFirst 5 analog-value points:")
+        count = 0
         for point in device.points:
-            print(f"  - {point.properties.name} ({point.properties.type}:{point.properties.address})")
-
-            # Check if point has priority array info
-            if hasattr(point, 'priority_array'):
-                print(f"    Priority Array: {point.priority_array}")
-            if hasattr(point, 'bacnet_properties'):
-                print(f"    Properties: {point.bacnet_properties}")
+            if 'analog-value' in str(point.properties.type):
+                print(f"  - {point.properties.name} ({point.properties.type}:{point.properties.address})")
+                count += 1
+                if count >= 5:
+                    break
     except Exception as e:
         print(f"Could not create device object: {e}")
 
-    # Try direct reads on analogValue:1
+    # Test with CORRECT instance IDs from the device
     print(f"\n{'='*60}")
-    print("Testing direct property reads on analogValue:1")
+    print("Testing priority array reads with CORRECT instance IDs")
     print(f"{'='*60}\n")
 
-    test_properties = [
-        ('presentValue', 'Present Value'),
-        ('priorityArray', 'Priority Array (by name)'),
-        ('87', 'Priority Array (by ID 87)'),
-        ('relinquishDefault', 'Relinquish Default'),
-        ('objectName', 'Object Name'),
-        ('objectType', 'Object Type'),
-        ('propertyList', 'Property List'),
+    # These are the actual instance IDs from the device
+    test_objects = [
+        ('analog-value', 58317, 'Consigne Temp Reprise'),
+        ('analog-value', 29619, 'Consigne Poids Eau'),
+        ('analog-value', 59581, 'Consigne Temp Eau Bassin 2'),
     ]
 
-    for prop, desc in test_properties:
+    for obj_type, instance, name in test_objects:
+        print(f"\n{name} ({obj_type}:{instance}):")
+
+        # Read presentValue
         try:
-            point = f"{target} analogValue 1 {prop}"
+            point = f"{target} {obj_type} {instance} presentValue"
             result = await bacnet.read(point)
-            print(f"  {desc}: {result}")
-            if hasattr(result, 'dict_contents'):
+            print(f"  presentValue: {result}")
+        except Exception as e:
+            print(f"  presentValue: ERROR - {e}")
+
+        # Read priorityArray by name
+        try:
+            point = f"{target} {obj_type} {instance} priorityArray"
+            result = await bacnet.read(point)
+            print(f"  priorityArray (by name): {result}")
+            if result and hasattr(result, 'dict_contents'):
                 print(f"    dict_contents(): {result.dict_contents()}")
-            if hasattr(result, '__iter__') and not isinstance(result, str):
-                print(f"    iterable length: {len(list(result))}")
         except Exception as e:
-            print(f"  {desc}: ERROR - {e}")
+            print(f"  priorityArray (by name): ERROR - {e}")
 
-    # Check what the actual object type is
-    print(f"\n{'='*60}")
-    print("Reading objectType to verify the object exists")
-    print(f"{'='*60}\n")
-
-    for obj_type in ['analogValue', 'analogInput', 'analogOutput']:
+        # Read priorityArray by ID 87
         try:
-            point = f"{target} {obj_type} 1 objectName"
+            point = f"{target} {obj_type} {instance} 87"
             result = await bacnet.read(point)
-            print(f"  {obj_type}:1 objectName = {result}")
+            print(f"  priorityArray (by ID 87): {result}")
+            if result and hasattr(result, 'dict_contents'):
+                print(f"    dict_contents(): {result.dict_contents()}")
         except Exception as e:
-            print(f"  {obj_type}:1 - {e}")
+            print(f"  priorityArray (by ID 87): ERROR - {e}")
+
+        # Read propertyList to see what's available
+        try:
+            point = f"{target} {obj_type} {instance} propertyList"
+            result = await bacnet.read(point)
+            print(f"  propertyList: {result}")
+        except Exception as e:
+            print(f"  propertyList: ERROR - {e}")
+
+    # Also test reading via device point object
+    if device:
+        print(f"\n{'='*60}")
+        print("Testing via device point object")
+        print(f"{'='*60}\n")
+
+        try:
+            point = device['Consigne Temp Reprise']
+            print(f"Point: {point.properties.name}")
+            print(f"  Type: {point.properties.type}")
+            print(f"  Address: {point.properties.address}")
+
+            # Try to get priority array via point
+            if hasattr(point, 'priority_array'):
+                pa = point.priority_array
+                if asyncio.iscoroutine(pa):
+                    pa = await pa
+                print(f"  priority_array attr: {pa}")
+
+            # Get bacnet properties
+            if hasattr(point, 'bacnet_properties'):
+                props = point.bacnet_properties
+                if asyncio.iscoroutine(props):
+                    props = await props
+                print(f"  bacnet_properties: {props}")
+
+        except Exception as e:
+            print(f"  Error: {e}")
 
     # Disconnect
+    if device:
+        device.disconnect()
     await bacnet._disconnect()
     print("\nDone!")
 

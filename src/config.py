@@ -72,24 +72,25 @@ class Config:
     def get_sensor_config(cls):
         """
         Define sensor configuration
-        Maps to the objects created in the BACnet simulator
+        Maps to the objects on the BACnet device (ECO_AUTOMATE)
+        Instance IDs are from the actual device discovery
         """
         return [
             {
                 'name': 'Consigne Temp Reprise',
-                'object': 'analogValue:1',
+                'object': 'analog-value:58317',
                 'unit': 'degreesCelsius',
                 'description': 'Room Temperature'
             },
             {
                 'name': 'Consigne Poids Eau',
-                'object': 'analogValue:2',
+                'object': 'analog-value:29619',
                 'unit': 'percent',
                 'description': 'Room Humidity'
             },
             {
                 'name': 'Consigne Temp Eau Bassin 2',
-                'object': 'analogValue:2',
+                'object': 'analog-value:59581',
                 'unit': 'degreesCelsius',
                 'description': 'test description'
             },
