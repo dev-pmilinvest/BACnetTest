@@ -228,6 +228,7 @@ class SensorReader:
 
                                     if priority_array is not None:
                                         reading['priority_array'], reading['active_priority'] = self._parse_priority_array(priority_array)
+                                        logger.debug(f"Priority array for {sensor['name']}: {reading['priority_array']}, active: {reading['active_priority']}")
 
                                 except Exception as prio_e:
                                     logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
@@ -274,6 +275,7 @@ class SensorReader:
 
                             if priority_array is not None:
                                 reading['priority_array'], reading['active_priority'] = self._parse_priority_array(priority_array)
+                                logger.debug(f"Priority array for {sensor['name']}: {reading['priority_array']}, active: {reading['active_priority']}")
 
                         except Exception as prio_e:
                             logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
@@ -288,6 +290,9 @@ class SensorReader:
 
         if readings:
             logger.info(f"Read {len(readings)}/{len(sensors)} sensor values")
+            # Debug: log full reading details
+            for r in readings:
+                logger.info(f"  📊 {r['sensor_name']}: value={r['value']}, priority_array={r.get('priority_array')}, active_priority={r.get('active_priority')}")
         else:
             logger.warning("No sensors responded")
 
