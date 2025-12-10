@@ -57,6 +57,33 @@ def parse_priority_array(pa):
     return result, active_priority
 
 
+def detailed_priority_array_analysis(pa):
+    """Detailed analysis of priority array"""
+    print(f"    Type: {type(pa)}")
+    print(f"    Has __len__: {hasattr(pa, '__len__')}")
+    if hasattr(pa, '__len__'):
+        print(f"    Length: {len(pa)}")
+
+    # Check for indexed access
+    if hasattr(pa, '__getitem__'):
+        print(f"    Supports indexing: True")
+        # Try accessing different indices
+        for idx in [0, 1, 15, 16]:
+            try:
+                item = pa[idx]
+                print(f"    pa[{idx}]: {item} -> {item.__dict__ if hasattr(item, '__dict__') else 'no dict'}")
+            except (IndexError, KeyError) as e:
+                print(f"    pa[{idx}]: IndexError/KeyError - {e}")
+
+    # Iterate and show all values
+    print(f"    All values by iteration:")
+    if hasattr(pa, '__iter__'):
+        for i, pv in enumerate(pa):
+            choice = getattr(pv, '_choice', 'unknown')
+            val = getattr(pv, choice, None) if choice != 'null' else None
+            print(f"      [{i}] _choice={choice}, value={val}")
+
+
 async def diagnose():
     # Connect to BACnet
     bacnet = BAC0.start(ip='192.168.1.18/24', port=47809)
@@ -96,21 +123,8 @@ async def diagnose():
             point = f"{target} {obj_type} {instance} priorityArray"
             result = await bacnet.read(point)
 
-            print(f"  Raw priorityArray type: {type(result)}")
-
-            # Check first element
-            if result and hasattr(result, '__iter__'):
-                first = list(result)[0]
-                print(f"  First PriorityValue type: {type(first)}")
-                print(f"  First PriorityValue str: {first}")
-                if hasattr(first, 'dict_contents'):
-                    print(f"  First PriorityValue dict_contents: {first.dict_contents()}")
-                if hasattr(first, '__dict__'):
-                    print(f"  First PriorityValue __dict__: {first.__dict__}")
-
-                # Check what attributes exist
-                attrs = [a for a in dir(first) if not a.startswith('_')]
-                print(f"  First PriorityValue attrs: {attrs[:10]}...")  # First 10
+            print(f"  Detailed priority array analysis:")
+            detailed_priority_array_analysis(result)
 
             # Parse it
             pa_list, active = parse_priority_array(result)

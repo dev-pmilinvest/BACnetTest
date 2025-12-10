@@ -47,12 +47,55 @@ class SensorReader:
         logger.info(f"Received signal {signum}, shutting down gracefully...")
         self.running = False
 
+    def _parse_priority_value(self, pv) -> Optional[float]:
+        """
+        Parse a single BACnet PriorityValue object.
+
+        Args:
+            pv: bacpypes3.basetypes.PriorityValue object
+
+        Returns:
+            Float value or None if null
+        """
+        if pv is None:
+            return None
+
+        # bacpypes3 PriorityValue has _choice field indicating which attribute has the value
+        # Possible choices: null, real, integer, unsigned, boolean, enumerated, etc.
+        if hasattr(pv, '_choice'):
+            choice = pv._choice
+            if choice == 'null' or choice is None:
+                return None
+
+            # Get the value from the corresponding attribute
+            val = getattr(pv, choice, None)
+            if val is not None:
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return None
+
+        # Fallback: check common value attributes directly
+        for attr in ['real', 'integer', 'unsigned', 'double']:
+            val = getattr(pv, attr, None)
+            if val is not None:
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    pass
+
+        # Check if null
+        if hasattr(pv, 'null') and pv.null is not None:
+            return None
+
+        return None
+
     def _parse_priority_array(self, priority_array) -> tuple:
         """
         Parse BACnet priority array object into a list and determine active priority.
 
         Args:
-            priority_array: BAC0 PriorityArray object
+            priority_array: BAC0 ArrayOfPriorityValue object
 
         Returns:
             Tuple of (priority_array_list, active_priority)
@@ -60,71 +103,15 @@ class SensorReader:
         pa_list = []
         active_priority = None
 
+        if priority_array is None:
+            return None, None
+
         try:
-            # Method 1: Try using dict_contents() (BAC0 recommended approach)
-            if hasattr(priority_array, 'dict_contents'):
-                pa_dict = priority_array.dict_contents()
-                for i in range(16):
-                    pv = pa_dict.get(i) or pa_dict.get(str(i))
-                    if pv is None:
-                        pa_list.append(None)
-                    elif isinstance(pv, dict):
-                        # PriorityValue is a dict like {'null': ()} or {'real': 25.0}
-                        keys = list(pv.keys())
-                        if keys and keys[0] == 'null':
-                            pa_list.append(None)
-                        else:
-                            val = list(pv.values())[0] if pv.values() else None
-                            try:
-                                pa_list.append(float(val) if val is not None else None)
-                            except (ValueError, TypeError):
-                                pa_list.append(None)
-                    else:
-                        try:
-                            pa_list.append(float(pv) if str(pv).lower() != 'null' else None)
-                        except (ValueError, TypeError):
-                            pa_list.append(None)
-
-            # Method 2: Try iterating directly
-            elif hasattr(priority_array, '__iter__'):
-                for item in priority_array:
-                    if item is None or str(item).lower() == 'null':
-                        pa_list.append(None)
-                    elif hasattr(item, 'dict_contents'):
-                        item_dict = item.dict_contents()
-                        keys = list(item_dict.keys())
-                        if keys and keys[0] == 'null':
-                            pa_list.append(None)
-                        else:
-                            val = list(item_dict.values())[0] if item_dict.values() else None
-                            try:
-                                pa_list.append(float(val) if val is not None else None)
-                            except (ValueError, TypeError):
-                                pa_list.append(None)
-                    else:
-                        try:
-                            pa_list.append(float(item))
-                        except (ValueError, TypeError):
-                            pa_list.append(None)
-
-            # Method 3: Try accessing by index
-            elif hasattr(priority_array, '__getitem__'):
-                for i in range(16):
-                    try:
-                        item = priority_array[i]
-                        if item is None or str(item).lower() == 'null':
-                            pa_list.append(None)
-                        elif hasattr(item, 'keys'):
-                            keys = list(item.keys())
-                            if keys and keys[0] == 'null':
-                                pa_list.append(None)
-                            else:
-                                val = list(item.values())[0] if item.values() else None
-                                pa_list.append(float(val) if val is not None else None)
-                        else:
-                            pa_list.append(float(item))
-                    except (IndexError, ValueError, TypeError):
-                        pa_list.append(None)
+            # Iterate over the priority array (should have 16 elements)
+            if hasattr(priority_array, '__iter__'):
+                for pv in priority_array:
+                    val = self._parse_priority_value(pv)
+                    pa_list.append(val)
 
         except Exception as e:
             logger.debug(f"Error parsing priority array: {e}")
@@ -223,9 +210,15 @@ class SensorReader:
                             }
 
                             # Try to read priority array and active priority
-                            # Only commandable objects have priority arrays (analogValue, analogOutput, binaryValue, binaryOutput, etc.)
+                            # Only commandable objects have priority arrays
                             obj_type, obj_instance = sensor['object'].split(':')
-                            commandable_types = ['analogValue', 'analogOutput', 'binaryValue', 'binaryOutput', 'multiStateValue', 'multiStateOutput']
+                            commandable_types = [
+                                'analogValue', 'analogOutput', 'binaryValue', 'binaryOutput',
+                                'multiStateValue', 'multiStateOutput',
+                                # Also support hyphenated format from BAC0
+                                'analog-value', 'analog-output', 'binary-value', 'binary-output',
+                                'multi-state-value', 'multi-state-output'
+                            ]
 
                             if obj_type in commandable_types:
                                 try:
@@ -267,7 +260,13 @@ class SensorReader:
 
                     # Try to read priority array and active priority
                     # Only commandable objects have priority arrays
-                    commandable_types = ['analogValue', 'analogOutput', 'binaryValue', 'binaryOutput', 'multiStateValue', 'multiStateOutput']
+                    commandable_types = [
+                        'analogValue', 'analogOutput', 'binaryValue', 'binaryOutput',
+                        'multiStateValue', 'multiStateOutput',
+                        # Also support hyphenated format from BAC0
+                        'analog-value', 'analog-output', 'binary-value', 'binary-output',
+                        'multi-state-value', 'multi-state-output'
+                    ]
 
                     if obj_type in commandable_types:
                         try:
