@@ -131,30 +131,43 @@ class SensorReader:
                             }
 
                             # Try to read priority array and active priority
-                            try:
-                                target_address = f"{Config.TARGET_DEVICE_IP}:{Config.BACNET_TARGET_PORT}"
-                                obj_type, obj_instance = sensor['object'].split(':')
+                            # Only commandable objects have priority arrays (analogValue, analogOutput, binaryValue, binaryOutput, etc.)
+                            obj_type, obj_instance = sensor['object'].split(':')
+                            commandable_types = ['analogValue', 'analogOutput', 'binaryValue', 'binaryOutput', 'multiStateValue', 'multiStateOutput']
 
-                                # Read priority array (property 87)
-                                priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
-                                priority_array = await self.bacnet.read(priority_array_point)
-                                if priority_array is not None:
-                                    # Convert to list, handling various return types
-                                    if hasattr(priority_array, '__iter__') and not isinstance(priority_array, str):
-                                        reading['priority_array'] = [float(v) if v is not None and str(v).lower() != 'null' else None for v in priority_array]
-                                    else:
-                                        reading['priority_array'] = priority_array
+                            if obj_type in commandable_types:
+                                try:
+                                    target_address = f"{Config.TARGET_DEVICE_IP}:{Config.BACNET_TARGET_PORT}"
 
-                                # Determine active priority from priority array
-                                if reading['priority_array'] and isinstance(reading['priority_array'], list):
-                                    # Find the highest priority (lowest index) with a non-null value
-                                    for idx, prio_value in enumerate(reading['priority_array']):
-                                        if prio_value is not None:
-                                            reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
-                                            break
+                                    # Read priority array (property 87)
+                                    priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
+                                    priority_array = await self.bacnet.read(priority_array_point)
+                                    if priority_array is not None and not isinstance(priority_array, str):
+                                        # Convert to list, handling various return types
+                                        if hasattr(priority_array, '__iter__'):
+                                            pa_list = []
+                                            for v in priority_array:
+                                                try:
+                                                    if v is None or (hasattr(v, 'is_null') and v.is_null) or str(v).lower() == 'null':
+                                                        pa_list.append(None)
+                                                    else:
+                                                        pa_list.append(float(v))
+                                                except (ValueError, TypeError):
+                                                    pa_list.append(None)
+                                            reading['priority_array'] = pa_list
+                                        else:
+                                            reading['priority_array'] = priority_array
 
-                            except Exception as prio_e:
-                                logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
+                                    # Determine active priority from priority array
+                                    if reading['priority_array'] and isinstance(reading['priority_array'], list):
+                                        # Find the highest priority (lowest index) with a non-null value
+                                        for idx, prio_value in enumerate(reading['priority_array']):
+                                            if prio_value is not None:
+                                                reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
+                                                break
+
+                                except Exception as prio_e:
+                                    logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
 
                             readings.append(reading)
                             logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']} (priority: {reading['active_priority']})")
@@ -181,27 +194,40 @@ class SensorReader:
                     }
 
                     # Try to read priority array and active priority
-                    try:
-                        # Read priority array (property 87)
-                        priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
-                        priority_array = await self.bacnet.read(priority_array_point)
-                        if priority_array is not None:
-                            # Convert to list, handling various return types
-                            if hasattr(priority_array, '__iter__') and not isinstance(priority_array, str):
-                                reading['priority_array'] = [float(v) if v is not None and str(v).lower() != 'null' else None for v in priority_array]
-                            else:
-                                reading['priority_array'] = priority_array
+                    # Only commandable objects have priority arrays
+                    commandable_types = ['analogValue', 'analogOutput', 'binaryValue', 'binaryOutput', 'multiStateValue', 'multiStateOutput']
 
-                        # Determine active priority from priority array
-                        if reading['priority_array'] and isinstance(reading['priority_array'], list):
-                            # Find the highest priority (lowest index) with a non-null value
-                            for idx, prio_value in enumerate(reading['priority_array']):
-                                if prio_value is not None:
-                                    reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
-                                    break
+                    if obj_type in commandable_types:
+                        try:
+                            # Read priority array (property 87)
+                            priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
+                            priority_array = await self.bacnet.read(priority_array_point)
+                            if priority_array is not None and not isinstance(priority_array, str):
+                                # Convert to list, handling various return types
+                                if hasattr(priority_array, '__iter__'):
+                                    pa_list = []
+                                    for v in priority_array:
+                                        try:
+                                            if v is None or (hasattr(v, 'is_null') and v.is_null) or str(v).lower() == 'null':
+                                                pa_list.append(None)
+                                            else:
+                                                pa_list.append(float(v))
+                                        except (ValueError, TypeError):
+                                            pa_list.append(None)
+                                    reading['priority_array'] = pa_list
+                                else:
+                                    reading['priority_array'] = priority_array
 
-                    except Exception as prio_e:
-                        logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
+                            # Determine active priority from priority array
+                            if reading['priority_array'] and isinstance(reading['priority_array'], list):
+                                # Find the highest priority (lowest index) with a non-null value
+                                for idx, prio_value in enumerate(reading['priority_array']):
+                                    if prio_value is not None:
+                                        reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
+                                        break
+
+                        except Exception as prio_e:
+                            logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
 
                     readings.append(reading)
                     logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']} (priority: {reading['active_priority']})")
