@@ -137,16 +137,19 @@ class SensorReader:
 
                                 # Read priority array (property 87)
                                 priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
-                                priority_array = self.bacnet.read(priority_array_point)
+                                priority_array = await self.bacnet.read(priority_array_point)
                                 if priority_array is not None:
-                                    reading['priority_array'] = list(priority_array) if hasattr(priority_array, '__iter__') else priority_array
+                                    # Convert to list, handling various return types
+                                    if hasattr(priority_array, '__iter__') and not isinstance(priority_array, str):
+                                        reading['priority_array'] = [float(v) if v is not None and str(v).lower() != 'null' else None for v in priority_array]
+                                    else:
+                                        reading['priority_array'] = priority_array
 
-                                # Read active priority element (property 431 - priorityForWriting in some implementations)
-                                # or determine from priority array
-                                if reading['priority_array']:
+                                # Determine active priority from priority array
+                                if reading['priority_array'] and isinstance(reading['priority_array'], list):
                                     # Find the highest priority (lowest index) with a non-null value
                                     for idx, prio_value in enumerate(reading['priority_array']):
-                                        if prio_value is not None and str(prio_value).lower() != 'null':
+                                        if prio_value is not None:
                                             reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
                                             break
 
@@ -164,8 +167,8 @@ class SensorReader:
                 obj_type, obj_instance = sensor['object'].split(':')
                 bacnet_point = f"{target_address} {obj_type} {obj_instance} presentValue"
 
-                # Use synchronous read (BAC0 handles async internally)
-                value = self.bacnet.read(bacnet_point)
+                # BAC0 2025.x - read() is async
+                value = await self.bacnet.read(bacnet_point)
 
                 if value is not None:
                     reading = {
@@ -181,15 +184,19 @@ class SensorReader:
                     try:
                         # Read priority array (property 87)
                         priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
-                        priority_array = self.bacnet.read(priority_array_point)
+                        priority_array = await self.bacnet.read(priority_array_point)
                         if priority_array is not None:
-                            reading['priority_array'] = list(priority_array) if hasattr(priority_array, '__iter__') else priority_array
+                            # Convert to list, handling various return types
+                            if hasattr(priority_array, '__iter__') and not isinstance(priority_array, str):
+                                reading['priority_array'] = [float(v) if v is not None and str(v).lower() != 'null' else None for v in priority_array]
+                            else:
+                                reading['priority_array'] = priority_array
 
                         # Determine active priority from priority array
-                        if reading['priority_array']:
+                        if reading['priority_array'] and isinstance(reading['priority_array'], list):
                             # Find the highest priority (lowest index) with a non-null value
                             for idx, prio_value in enumerate(reading['priority_array']):
-                                if prio_value is not None and str(prio_value).lower() != 'null':
+                                if prio_value is not None:
                                     reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
                                     break
 
