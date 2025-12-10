@@ -113,13 +113,13 @@ class SensorReader:
             return readings
 
         for sensor in sensors:
+            point = self.device[sensor['name']]
+            test = await point
+            print(test)
+            sys.exit(1)
             try:
                 # Try reading via device object first (if available)
                 if self.device:
-                    point = self.device[sensor['name']]
-                    test = await point
-                    print(point)
-                    sys.exit(1)
                     try:
                         point = self.device[sensor['name']]
                         value = await point.value
