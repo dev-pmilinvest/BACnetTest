@@ -69,11 +69,13 @@ class SensorReader:
 
             # Get the value from the corresponding attribute
             val = getattr(pv, choice, None)
-            if val is not None:
+            # Note: 'null' choice sets null=() which is not None, so we need to check for actual values
+            if val is not None and val != ():
                 try:
                     return float(val)
                 except (ValueError, TypeError):
                     return None
+            return None
 
         # Fallback: check common value attributes directly
         for attr in ['real', 'integer', 'unsigned', 'double']:
@@ -83,10 +85,6 @@ class SensorReader:
                     return float(val)
                 except (ValueError, TypeError):
                     pass
-
-        # Check if null
-        if hasattr(pv, 'null') and pv.null is not None:
-            return None
 
         return None
 

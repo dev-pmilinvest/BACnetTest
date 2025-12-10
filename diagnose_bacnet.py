@@ -7,35 +7,35 @@ import BAC0
 
 def parse_priority_value(pv):
     """Parse a single PriorityValue object"""
-    # Try dict_contents first
-    if hasattr(pv, 'dict_contents'):
-        d = pv.dict_contents()
-        if isinstance(d, dict):
-            keys = list(d.keys())
-            if keys:
-                key = keys[0]
-                if key == 'null' or key is None:
-                    return None
-                val = d[key]
-                try:
-                    return float(val) if val is not None else None
-                except (ValueError, TypeError):
-                    return val
-
-    # Try direct attribute access
-    if hasattr(pv, 'null'):
-        return None
-    if hasattr(pv, 'real'):
-        return pv.real
-    if hasattr(pv, 'integer'):
-        return pv.integer
-
-    # Try string conversion
-    s = str(pv)
-    if 'null' in s.lower():
+    if pv is None:
         return None
 
-    return str(pv)
+    # bacpypes3 PriorityValue has _choice field indicating which attribute has the value
+    if hasattr(pv, '_choice'):
+        choice = pv._choice
+        if choice == 'null' or choice is None:
+            return None
+
+        # Get the value from the corresponding attribute
+        val = getattr(pv, choice, None)
+        # Note: 'null' choice sets null=() which is not None, so we need to check
+        if val is not None and val != ():
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    # Fallback: check common value attributes directly
+    for attr in ['real', 'integer', 'unsigned', 'double']:
+        val = getattr(pv, attr, None)
+        if val is not None:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                pass
+
+    return None
 
 
 def parse_priority_array(pa):
