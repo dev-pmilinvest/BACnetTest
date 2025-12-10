@@ -113,10 +113,6 @@ class SensorReader:
             return readings
 
         for sensor in sensors:
-            point = self.device[sensor['name']]
-            test = await point
-            print(test)
-            sys.exit(1)
             try:
                 # Try reading via device object first (if available)
                 if self.device:
@@ -125,13 +121,40 @@ class SensorReader:
                         value = await point.value
 
                         if value is not None:
-                            readings.append({
+                            reading = {
                                 'timestamp': timestamp,
                                 'sensor_name': sensor['name'],
                                 'value': float(value),
-                                'unit': sensor['unit']
-                            })
-                            logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']}")
+                                'unit': sensor['unit'],
+                                'priority_array': None,
+                                'active_priority': None
+                            }
+
+                            # Try to read priority array and active priority
+                            try:
+                                target_address = f"{Config.TARGET_DEVICE_IP}:{Config.BACNET_TARGET_PORT}"
+                                obj_type, obj_instance = sensor['object'].split(':')
+
+                                # Read priority array (property 87)
+                                priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
+                                priority_array = self.bacnet.read(priority_array_point)
+                                if priority_array is not None:
+                                    reading['priority_array'] = list(priority_array) if hasattr(priority_array, '__iter__') else priority_array
+
+                                # Read active priority element (property 431 - priorityForWriting in some implementations)
+                                # or determine from priority array
+                                if reading['priority_array']:
+                                    # Find the highest priority (lowest index) with a non-null value
+                                    for idx, prio_value in enumerate(reading['priority_array']):
+                                        if prio_value is not None and str(prio_value).lower() != 'null':
+                                            reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
+                                            break
+
+                            except Exception as prio_e:
+                                logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
+
+                            readings.append(reading)
+                            logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']} (priority: {reading['active_priority']})")
                         continue
                     except Exception as e:
                         logger.debug(f"Device read failed for {sensor['name']}, trying direct read: {e}")
@@ -145,13 +168,36 @@ class SensorReader:
                 value = self.bacnet.read(bacnet_point)
 
                 if value is not None:
-                    readings.append({
+                    reading = {
                         'timestamp': timestamp,
                         'sensor_name': sensor['name'],
                         'value': float(value),
-                        'unit': sensor['unit']
-                    })
-                    logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']}")
+                        'unit': sensor['unit'],
+                        'priority_array': None,
+                        'active_priority': None
+                    }
+
+                    # Try to read priority array and active priority
+                    try:
+                        # Read priority array (property 87)
+                        priority_array_point = f"{target_address} {obj_type} {obj_instance} priorityArray"
+                        priority_array = self.bacnet.read(priority_array_point)
+                        if priority_array is not None:
+                            reading['priority_array'] = list(priority_array) if hasattr(priority_array, '__iter__') else priority_array
+
+                        # Determine active priority from priority array
+                        if reading['priority_array']:
+                            # Find the highest priority (lowest index) with a non-null value
+                            for idx, prio_value in enumerate(reading['priority_array']):
+                                if prio_value is not None and str(prio_value).lower() != 'null':
+                                    reading['active_priority'] = idx + 1  # BACnet priorities are 1-indexed
+                                    break
+
+                    except Exception as prio_e:
+                        logger.debug(f"Could not read priority info for {sensor['name']}: {prio_e}")
+
+                    readings.append(reading)
+                    logger.debug(f"✓ {sensor['name']}: {value} {sensor['unit']} (priority: {reading['active_priority']})")
                 else:
                     logger.warning(f"✗ {sensor['name']}: No response")
 
@@ -185,11 +231,18 @@ class SensorReader:
 
         for sensor_name, (min_val, max_val, unit) in simulated_data.items():
             value = random.uniform(min_val, max_val)
+            # Simulate priority array (16 levels, mostly null)
+            priority_array = [None] * 16
+            active_priority = random.choice([8, 10, 12, 16])  # Common BACnet priority levels
+            priority_array[active_priority - 1] = round(value, 2)
+
             readings.append({
                 'timestamp': timestamp,
                 'sensor_name': sensor_name,
                 'value': round(value, 2),
-                'unit': unit
+                'unit': unit,
+                'priority_array': priority_array,
+                'active_priority': active_priority
             })
 
         logger.debug(f"Generated {len(readings)} simulated readings")
@@ -218,7 +271,9 @@ class SensorReader:
             'timestamp': r['timestamp'],
             'sensor_name': r['sensor_name'],
             'value': r['value'],
-            'unit': r['unit']
+            'unit': r['unit'],
+            'priority_array': r.get('priority_array'),
+            'active_priority': r.get('active_priority')
         } for r in unposted]
 
         # Post to API

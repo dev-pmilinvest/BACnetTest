@@ -4,6 +4,7 @@ Handles local SQLite storage for sensor readings
 """
 
 import sqlite3
+import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -37,10 +38,23 @@ class Database:
                     sensor_name TEXT NOT NULL,
                     value REAL NOT NULL,
                     unit TEXT,
+                    priority_array TEXT,
+                    active_priority INTEGER,
                     posted INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Add new columns if they don't exist (for migration)
+            try:
+                cursor.execute('ALTER TABLE sensor_readings ADD COLUMN priority_array TEXT')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+            try:
+                cursor.execute('ALTER TABLE sensor_readings ADD COLUMN active_priority INTEGER')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
             # Create indexes
             cursor.execute('''
@@ -77,14 +91,20 @@ class Database:
             cursor = self.conn.cursor()
 
             for reading in readings:
+                # Serialize priority_array as JSON if present
+                priority_array = reading.get('priority_array')
+                priority_array_json = json.dumps(priority_array) if priority_array is not None else None
+
                 cursor.execute('''
-                    INSERT INTO sensor_readings (timestamp, sensor_name, value, unit)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO sensor_readings (timestamp, sensor_name, value, unit, priority_array, active_priority)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 ''', (
                     reading['timestamp'],
                     reading['sensor_name'],
                     reading['value'],
-                    reading.get('unit', '')
+                    reading.get('unit', ''),
+                    priority_array_json,
+                    reading.get('active_priority')
                 ))
 
             self.conn.commit()
@@ -106,14 +126,21 @@ class Database:
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT id, timestamp, sensor_name, value, unit
+                SELECT id, timestamp, sensor_name, value, unit, priority_array, active_priority
                 FROM sensor_readings
                 WHERE posted = 0
                 ORDER BY timestamp ASC
             ''')
 
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            results = []
+            for row in rows:
+                reading = dict(row)
+                # Deserialize priority_array from JSON
+                if reading.get('priority_array'):
+                    reading['priority_array'] = json.loads(reading['priority_array'])
+                results.append(reading)
+            return results
 
         except sqlite3.Error as e:
             logger.error(f"Failed to fetch unposted readings: {e}")
