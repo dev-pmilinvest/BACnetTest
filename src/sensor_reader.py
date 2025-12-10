@@ -116,12 +116,13 @@ class SensorReader:
             try:
                 # Try reading via device object first (if available)
                 if self.device:
+                    point = self.device[sensor['name']]
+                    test = await point
+                    print(point)
+                    sys.exit(1)
                     try:
                         point = self.device[sensor['name']]
                         value = await point.value
-                        test = await point
-                        print(point)
-                        sys.exit(1)
 
                         if value is not None:
                             readings.append({
