@@ -23,11 +23,21 @@ from src.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-class BACnetWriter:
-    """Service for writing values to BACnet devices"""
+class BACnetToolkit:
+    """Service for reading/writing values to BACnet devices"""
 
     def __init__(self):
         self.bacnet = None
+
+    def _to_camel_case(self, s: str) -> str:
+        """
+        Convert hyphenated string to camelCase.
+        e.g., 'analog-value' -> 'analogValue'
+        """
+        if '-' not in s:
+            return s
+        parts = s.split('-')
+        return parts[0] + ''.join(word.capitalize() for word in parts[1:])
 
     async def connect(self) -> bool:
         """
@@ -85,44 +95,22 @@ class BACnetWriter:
         target_address = f"{target_ip}:{target_port}"
 
         try:
-            logger.info(f"Writing: {object_type}:{object_instance} = {value} @ priority {priority}")
+            # Convert hyphenated format to camelCase (BAC0 expects camelCase)
+            # e.g., "analog-value" -> "analogValue"
+            obj_type_camel = self._to_camel_case(object_type)
 
-            # Try multiple write format variations
-            write_formats = [
-                # Format 1: address object instance property value - priority
-                f"{target_address} {object_type} {object_instance} presentValue {value} - {priority}",
-                # Format 2: without the dash
-                f"{target_address} {object_type} {object_instance} presentValue {value} {priority}",
-                # Format 3: with @ for priority
-                f"{target_address} {object_type} {object_instance} presentValue {value} @ {priority}",
-            ]
+            # Construct the write request
+            # Format: "address object instance property value - priority"
+            write_point = f"{target_address} {obj_type_camel} {object_instance} presentValue {value} - {priority}"
 
-            for i, write_point in enumerate(write_formats):
-                logger.info(f"Trying write format {i+1}: {write_point}")
-                try:
-                    result = self.bacnet.write(write_point)
-                    if asyncio.iscoroutine(result):
-                        await result
+            logger.info(f"Writing: {obj_type_camel}:{object_instance} = {value} @ priority {priority}")
+            logger.debug(f"Write request: {write_point}")
 
-                    # Wait for task to execute
-                    await asyncio.sleep(2)
+            # Use _write() which is the async version that waits for completion
+            await self.bacnet._write(write_point)
 
-                    # Check if write succeeded by reading back
-                    read_point = f"{target_address} {object_type} {object_instance} presentValue"
-                    new_value = await self.bacnet.read(read_point)
-
-                    if new_value is not None and abs(float(new_value) - value) < 0.01:
-                        logger.info(f"Write succeeded with format {i+1}")
-                        return True
-                    else:
-                        logger.warning(f"Format {i+1} didn't change value (still {new_value})")
-
-                except Exception as e:
-                    logger.warning(f"Format {i+1} failed: {e}")
-                    continue
-
-            logger.error(f"All write formats failed for {object_type}:{object_instance}")
-            return False
+            logger.info(f"Successfully wrote {value} to {obj_type_camel}:{object_instance}")
+            return True
 
         except Exception as e:
             logger.error(f"Failed to write to {object_type}:{object_instance}: {e}", exc_info=True)
@@ -158,21 +146,19 @@ class BACnetWriter:
         target_address = f"{target_ip}:{target_port}"
 
         try:
-            # Write null to release the priority
-            write_point = f"{target_address} {object_type} {object_instance} presentValue null - {priority}"
+            # Convert hyphenated format to camelCase
+            obj_type_camel = self._to_camel_case(object_type)
 
-            logger.info(f"Releasing priority {priority} on {object_type}:{object_instance}")
+            # Write null to release the priority
+            write_point = f"{target_address} {obj_type_camel} {object_instance} presentValue null - {priority}"
+
+            logger.info(f"Releasing priority {priority} on {obj_type_camel}:{object_instance}")
             logger.debug(f"Release request: {write_point}")
 
-            # BAC0 2025.x - write() schedules a task, need to wait for it
-            result = self.bacnet.write(write_point)
-            if asyncio.iscoroutine(result):
-                await result
+            # Use _write() which is the async version
+            await self.bacnet._write(write_point)
 
-            # Give BAC0 time to execute the scheduled write task
-            await asyncio.sleep(1)
-
-            logger.info(f"Successfully released priority {priority} on {object_type}:{object_instance}")
+            logger.info(f"Successfully released priority {priority} on {obj_type_camel}:{object_instance}")
             return True
 
         except Exception as e:
@@ -230,11 +216,11 @@ class BACnetWriter:
 
 async def main_async(args):
     """Async main function"""
-    writer = BACnetWriter()
+    toolkit = BACnetToolkit()
 
     try:
         # Connect to BACnet
-        if not await writer.connect():
+        if not await toolkit.connect():
             logger.error("Failed to connect to BACnet network")
             return 1
 
@@ -253,12 +239,12 @@ async def main_async(args):
                 return 1
 
             # Read current value first
-            current = await writer.read_value(obj_type, obj_instance, args.device_ip, args.device_port)
+            current = await toolkit.read_value(obj_type, obj_instance, args.device_ip, args.device_port)
             if current is not None:
                 logger.info(f"Current value: {current}")
 
             # Write new value
-            success = await writer.write_value(
+            success = await toolkit.write_value(
                 obj_type, obj_instance, args.value, args.priority,
                 args.device_ip, args.device_port
             )
@@ -266,25 +252,25 @@ async def main_async(args):
             if success:
                 # Verify the write
                 await asyncio.sleep(0.5)
-                new_value = await writer.read_value(obj_type, obj_instance, args.device_ip, args.device_port)
+                new_value = await toolkit.read_value(obj_type, obj_instance, args.device_ip, args.device_port)
                 if new_value is not None:
                     logger.info(f"Verified new value: {new_value}")
 
             return 0 if success else 1
 
         elif args.action == 'release':
-            success = await writer.release_value(
+            success = await toolkit.release_value(
                 obj_type, obj_instance, args.priority,
                 args.device_ip, args.device_port
             )
             return 0 if success else 1
 
         elif args.action == 'read':
-            value = await writer.read_value(obj_type, obj_instance, args.device_ip, args.device_port)
+            value = await toolkit.read_value(obj_type, obj_instance, args.device_ip, args.device_port)
             return 0 if value is not None else 1
 
     finally:
-        await writer.disconnect()
+        await toolkit.disconnect()
 
 
 def main():
