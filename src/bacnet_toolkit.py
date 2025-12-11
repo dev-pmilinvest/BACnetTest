@@ -92,10 +92,13 @@ class BACnetWriter:
             logger.info(f"Writing: {object_type}:{object_instance} = {value} @ priority {priority}")
             logger.debug(f"Write request: {write_point}")
 
-            # BAC0 2025.x - write() may be sync or async depending on version
+            # BAC0 2025.x - write() schedules a task, need to wait for it
             result = self.bacnet.write(write_point)
             if asyncio.iscoroutine(result):
                 await result
+
+            # Give BAC0 time to execute the scheduled write task
+            await asyncio.sleep(1)
 
             logger.info(f"Successfully wrote {value} to {object_type}:{object_instance}")
             return True
@@ -140,10 +143,13 @@ class BACnetWriter:
             logger.info(f"Releasing priority {priority} on {object_type}:{object_instance}")
             logger.debug(f"Release request: {write_point}")
 
-            # BAC0 2025.x - write() may be sync or async depending on version
+            # BAC0 2025.x - write() schedules a task, need to wait for it
             result = self.bacnet.write(write_point)
             if asyncio.iscoroutine(result):
                 await result
+
+            # Give BAC0 time to execute the scheduled write task
+            await asyncio.sleep(1)
 
             logger.info(f"Successfully released priority {priority} on {object_type}:{object_instance}")
             return True
