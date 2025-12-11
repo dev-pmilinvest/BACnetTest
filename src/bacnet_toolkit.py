@@ -85,23 +85,44 @@ class BACnetWriter:
         target_address = f"{target_ip}:{target_port}"
 
         try:
-            # Construct the write request
-            # Format: "address objectType instance presentValue value - priority"
-            write_point = f"{target_address} {object_type} {object_instance} presentValue {value} - {priority}"
-
             logger.info(f"Writing: {object_type}:{object_instance} = {value} @ priority {priority}")
-            logger.debug(f"Write request: {write_point}")
 
-            # BAC0 2025.x - write() schedules a task, need to wait for it
-            result = self.bacnet.write(write_point)
-            if asyncio.iscoroutine(result):
-                await result
+            # Try multiple write format variations
+            write_formats = [
+                # Format 1: address object instance property value - priority
+                f"{target_address} {object_type} {object_instance} presentValue {value} - {priority}",
+                # Format 2: without the dash
+                f"{target_address} {object_type} {object_instance} presentValue {value} {priority}",
+                # Format 3: with @ for priority
+                f"{target_address} {object_type} {object_instance} presentValue {value} @ {priority}",
+            ]
 
-            # Give BAC0 time to execute the scheduled write task
-            await asyncio.sleep(1)
+            for i, write_point in enumerate(write_formats):
+                logger.info(f"Trying write format {i+1}: {write_point}")
+                try:
+                    result = self.bacnet.write(write_point)
+                    if asyncio.iscoroutine(result):
+                        await result
 
-            logger.info(f"Successfully wrote {value} to {object_type}:{object_instance}")
-            return True
+                    # Wait for task to execute
+                    await asyncio.sleep(2)
+
+                    # Check if write succeeded by reading back
+                    read_point = f"{target_address} {object_type} {object_instance} presentValue"
+                    new_value = await self.bacnet.read(read_point)
+
+                    if new_value is not None and abs(float(new_value) - value) < 0.01:
+                        logger.info(f"Write succeeded with format {i+1}")
+                        return True
+                    else:
+                        logger.warning(f"Format {i+1} didn't change value (still {new_value})")
+
+                except Exception as e:
+                    logger.warning(f"Format {i+1} failed: {e}")
+                    continue
+
+            logger.error(f"All write formats failed for {object_type}:{object_instance}")
+            return False
 
         except Exception as e:
             logger.error(f"Failed to write to {object_type}:{object_instance}: {e}", exc_info=True)
